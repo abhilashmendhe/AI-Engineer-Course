@@ -1,9 +1,13 @@
-import os 
+import os
+import tiktoken
+
+from transformers import AutoTokenizer
 from dotenv import load_dotenv
 from openai import OpenAI
 
+
 class ChatBot:
-    def __init__(self, base_url: str, api_key: str):
+    def __init__(self, base_url: str, api_key: str, hf_model: str, hf_token: str):
         self.llm_client = OpenAI(
             base_url=base_url,
             api_key=api_key
@@ -20,7 +24,11 @@ class ChatBot:
             }    
         ] # This is conversation history
         
+        self.tokenizers = AutoTokenizer.from_pretrained(hf_model, token=hf_token)
+        
         self.total_tokens = 0
+        self.input_tokens = 0
+        self.output_tokens = 0
         
     def bot(self, message: str):
         self.messages.append(
@@ -45,15 +53,28 @@ class ChatBot:
             "content": answer
         })
         self.total_tokens += response.usage.total_tokens
+        self.input_tokens += response.usage.prompt_tokens
+        self.output_tokens += response.usage.completion_tokens
         return answer
 
     def chat(self):
+        # encoding = tiktoken.get_encoding('cl100k_base')
         while True:
             user_input = input("Ask something (type 'q' to terminate): ").strip().lower()
             # print(messages)
             if user_input == 'q':
                 print("Goodbye... 👋")
                 break
+            
+            inp_user_token_count = len(self.tokenizers.encode(user_input))
+            if inp_user_token_count > 15:
+                print("Your prompt exceeded the limit. Make sure your prompt words are around 12-14 words.")
+                continue
+            
+            if self.token_tokens > 300:
+                print("You've exceeded the token limit.")
+                break
+            
             bot_answer = self.bot(user_input)
             print(f"Answer: {bot_answer}\n")
         
@@ -64,14 +85,20 @@ class ChatBot:
         for message in self.messages:
             print(message)
         
-        print(f"\nTotal tokens used: {self.total_tokens}\n")
+        print(f"\nTotal input tokens: {self.input_tokens}")
+        print(f"Total output tokens: {self.output_tokens}")
+        print(f"Total tokens used: {self.total_tokens}")
+        
+        print(f"\nCost: $ {((self.input_tokens * 0.05 + self.output_tokens * 0.08) / 1e6):.8f} per million tokens.")
     
 if __name__ == "__main__": 
     
     load_dotenv()
     groq_api_key = os.environ.get("GROQ_API_KEY")
     groq_request_url = "https://api.groq.com/openai/v1"
-    
-    chatbot = ChatBot(groq_request_url, groq_api_key)
+    # hf_model = "meta-llama/Llama-3.1-8B"
+    hf_model = "NousResearch/Meta-Llama-3.1-8B"
+    hf_token = os.environ.get("HF_TOKEN")
+    chatbot = ChatBot(groq_request_url, groq_api_key, hf_model, hf_token)
     chatbot.chat()
     chatbot.report()
