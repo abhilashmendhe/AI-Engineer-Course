@@ -27,7 +27,16 @@ def bot(message: str, messages: list, llm_client: OpenAI):
     return answer
 
 def main(llm_client: OpenAI):
-    messages = [] # This is conversation history
+    messages = [
+        {
+            "role": "system",
+            "content": """
+                You are a helpful assistant. Your name is Goku bot. 
+                Introduce yourself in the very first message.
+                Give short and helpful answers.
+            """
+        }    
+    ] # This is conversation history
     while True:
         user_input = input("Ask something (type 'q' to terminate): ").strip().lower()
         # print(messages)
