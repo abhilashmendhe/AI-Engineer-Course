@@ -4,6 +4,12 @@ from copy import deepcopy
 from transformers import AutoTokenizer
 from dotenv import load_dotenv
 from openai import OpenAI
+from enum import Enum
+
+
+class ContexWindowMethod(Enum):
+    SLIDING_WINDOW = 1
+    SUMMARIZATION = 2
 
 
 class ChatBot:
@@ -13,7 +19,10 @@ class ChatBot:
         api_key: str,
         hf_model: str,
         hf_token: str,
+        is_stream: str = False,
         max_number_trim_messages: int = 4,
+        max_summarization_iteration: int = 5,
+        context_window_method: ContexWindowMethod = ContexWindowMethod.SUMMARIZATION,
     ):
         self.llm_client = OpenAI(base_url=base_url, api_key=api_key)
 
@@ -27,8 +36,10 @@ class ChatBot:
                 """,
             }
         ]  # This is conversation history
-
         self.actual_history_messages = deepcopy(self.messages)
+
+        self.is_stream = is_stream
+
         self.tokenizers = AutoTokenizer.from_pretrained(hf_model, token=hf_token)
 
         self.total_tokens = 0
@@ -37,18 +48,51 @@ class ChatBot:
 
         self.max_number_trim_messages = max_number_trim_messages
 
+        self.max_summarization_iteration = max_summarization_iteration
+        self.iterations = 0
+
+        self.context_win_method = context_window_method
+
     def trim_messages(self):
         if len(self.messages) < self.max_number_trim_messages:
-            return 
-        
-        system_messages = [m for m in self.messages if m['role'] == 'system']
-        other_messages = [m for m in self.messages if m['role'] != 'system']
-        
-        trimmed_messages = other_messages[-self.max_number_trim_messages:]
-        
+            return
+
+        system_messages = [m for m in self.messages if m["role"] == "system"]
+        other_messages = [m for m in self.messages if m["role"] != "system"]
+
+        trimmed_messages = other_messages[-self.max_number_trim_messages :]
+
         self.messages = [*system_messages, *trimmed_messages]
 
-    def bot(self, message: str, stream=False):
+    def summarize_messages(self):
+        if self.iterations % self.max_summarization_iteration != 0:
+            return
+        system_messages = [m for m in self.messages if m["role"] == "system"]
+        other_messages = [m for m in self.messages if m["role"] != "system"]
+
+        early_messages, last_messages = (other_messages[0:5], other_messages[5:])
+        response = self.llm_client.chat.completions.create(
+            model="openai/gpt-oss-20b",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Summarize these messages concisely, keeping key facts and decisions.",
+                },
+                *early_messages,
+            ],
+        )
+        summarized_message = {
+            "role": "system",
+            "content": f"""
+            This is a summary of the five early messages: {response.choices[0].message.content}
+            """,
+        }
+
+        self.messages = [*system_messages, summarized_message, *last_messages]
+
+        print("\n\n ------------- Summarization was succesful ------------- \n")
+
+    def bot(self, message: str):
         self.messages.append(
             {
                 "role": "user",  # A role could be 'user', 'system', or 'assistant'
@@ -61,7 +105,7 @@ class ChatBot:
                 "content": message,
             }
         )
-        if not stream:
+        if not self.is_stream:
             response = self.llm_client.chat.completions.create(
                 model="openai/gpt-oss-20b",
                 messages=self.messages,
@@ -69,7 +113,7 @@ class ChatBot:
                 # top_p=1,
                 # max_completion_tokens=2048,
                 # reasoning_effort="medium",
-                stream=stream,
+                stream=self.is_stream,
                 # stop=None
             )
             answer = response.choices[0].message.content
@@ -80,7 +124,7 @@ class ChatBot:
             response = self.llm_client.chat.completions.create(
                 model="openai/gpt-oss-20b",
                 messages=self.messages,
-                stream=stream,
+                stream=self.is_stream,
             )
             answer = ""
             for chunk in response:
@@ -98,15 +142,21 @@ class ChatBot:
         # print()
         self.messages.append({"role": "assistant", "content": answer})
         self.actual_history_messages.append({"role": "assistant", "content": answer})
-        self.trim_messages()
-        if not stream:
+
+        if self.context_win_method == ContexWindowMethod.SLIDING_WINDOW:
+            self.trim_messages()
+        elif self.context_win_method == ContexWindowMethod.SUMMARIZATION:
+            self.summarize_messages()
+
+        if not self.is_stream:
             return answer
 
-    def chat(self, stream=False):
+    def chat(self):
         # encoding = tiktoken.get_encoding('cl100k_base')
         while True:
+            self.iterations += 1
             user_input = (
-                input("Ask something (type 'q' to terminate): ").strip().lower()
+                input("\nAsk something (type 'q' to terminate): ").strip().lower()
             )
             # print(messages)
             if user_input == "q":
@@ -124,8 +174,9 @@ class ChatBot:
                 print("You've exceeded the token limit.")
                 break
 
-            bot_answer = self.bot(user_input, stream)
-            print(f"Answer: {bot_answer}\n")
+            bot_answer = self.bot(user_input)
+            if not self.is_stream:
+                print(f"Answer: {bot_answer}\n")
 
     def report(self):
         print("\n---- #################### Printing Report #################### ----\n")
@@ -149,7 +200,9 @@ if __name__ == "__main__":
     # hf_model = "meta-llama/Llama-3.1-8B"
     hf_model = "NousResearch/Meta-Llama-3.1-8B"
     hf_token = os.environ.get("HF_TOKEN")
-    print("\n -------------------- STARTED CHATBOT ---------------------- \n")
-    chatbot = ChatBot(groq_request_url, groq_api_key, hf_model, hf_token)
-    chatbot.chat(True)
+    print("\n -------------------- STARTED CHATBOT ----------------------")
+    chatbot = ChatBot(
+        groq_request_url, groq_api_key, hf_model, hf_token, is_stream=True
+    )
+    chatbot.chat()
     chatbot.report()
