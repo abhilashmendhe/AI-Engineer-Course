@@ -1,14 +1,20 @@
 import os
-import tiktoken
 import time
-
+from copy import deepcopy
 from transformers import AutoTokenizer
 from dotenv import load_dotenv
 from openai import OpenAI
 
 
 class ChatBot:
-    def __init__(self, base_url: str, api_key: str, hf_model: str, hf_token: str):
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        hf_model: str,
+        hf_token: str,
+        max_number_trim_messages: int = 4,
+    ):
         self.llm_client = OpenAI(base_url=base_url, api_key=api_key)
 
         self.messages = [
@@ -22,14 +28,34 @@ class ChatBot:
             }
         ]  # This is conversation history
 
+        self.actual_history_messages = deepcopy(self.messages)
         self.tokenizers = AutoTokenizer.from_pretrained(hf_model, token=hf_token)
 
         self.total_tokens = 0
         self.input_tokens = 0
         self.output_tokens = 0
 
+        self.max_number_trim_messages = max_number_trim_messages
+
+    def trim_messages(self):
+        if len(self.messages) < self.max_number_trim_messages:
+            return 
+        
+        system_messages = [m for m in self.messages if m['role'] == 'system']
+        other_messages = [m for m in self.messages if m['role'] != 'system']
+        
+        trimmed_messages = other_messages[-self.max_number_trim_messages:]
+        
+        self.messages = [*system_messages, *trimmed_messages]
+
     def bot(self, message: str, stream=False):
         self.messages.append(
+            {
+                "role": "user",  # A role could be 'user', 'system', or 'assistant'
+                "content": message,
+            }
+        )
+        self.actual_history_messages.append(
             {
                 "role": "user",  # A role could be 'user', 'system', or 'assistant'
                 "content": message,
@@ -66,11 +92,13 @@ class ChatBot:
                         time.sleep(0.05)
 
                 if chunk.usage:
-                    self.total_tokens  += chunk.usage.total_tokens
-                    self.input_tokens  += chunk.usage.prompt_tokens
+                    self.total_tokens += chunk.usage.total_tokens
+                    self.input_tokens += chunk.usage.prompt_tokens
                     self.output_tokens += chunk.usage.completion_tokens
         # print()
         self.messages.append({"role": "assistant", "content": answer})
+        self.actual_history_messages.append({"role": "assistant", "content": answer})
+        self.trim_messages()
         if not stream:
             return answer
 
@@ -92,7 +120,7 @@ class ChatBot:
                 )
                 continue
 
-            if self.total_tokens > 300:
+            if self.total_tokens > 10000:
                 print("You've exceeded the token limit.")
                 break
 
@@ -102,7 +130,7 @@ class ChatBot:
     def report(self):
         print("\n---- #################### Printing Report #################### ----\n")
         print("\nConversation history of messages: ")
-        for message in self.messages:
+        for message in self.actual_history_messages:
             print(message)
 
         print(f"\nTotal input tokens: {self.input_tokens}")
