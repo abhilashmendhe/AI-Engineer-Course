@@ -2,13 +2,19 @@ import os
 import dotenv
 from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain.agents import create_agent
+from tools import get_weather
 
 
 class Agent:
     def __init__(self, model: str, temperature: float):
         self.llm = ChatGroq(model=model, temperature=temperature)
 
-        self.messages = [SystemMessage("Give short answers")]
+        self.messages = [
+            SystemMessage("Give short answers, use the provided tools whenever needed")
+        ]
+
+        self.agent = create_agent(model=self.llm, tools=[get_weather])
 
     def chat(self):
 
@@ -23,11 +29,11 @@ class Agent:
 
             self.messages.append(HumanMessage(user_input))
 
-            response = self.llm.invoke(self.messages)
+            response = self.agent.invoke({"messages": self.messages})
 
-            self.messages.append(response)
+            self.messages.append(response['messages'][-1])
 
-            print(response.content)
+            print(response['messages'][-1].content)
 
 
 if __name__ == "__main__":
