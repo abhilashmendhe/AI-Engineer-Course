@@ -18,17 +18,32 @@ class Agent:
 
     def chat(self):
 
+        active_session = "session_1"
+
         while True:
             user_input = (
-                input("\nAsk something (type 'q' to terminate): ").strip().lower()
+                input(
+                    f"\n({active_session})Ask something (type 'q' to terminate or 'ch' to change the session): "
+                )
+                .strip()
+                .lower()
             )
             if user_input == "q":
                 print("Goodbye... 👋")
                 break
 
-            config = {"configurable": {"thread_id": "session_1"}}
+            if user_input == "ch":
+                active_session = (
+                    "session_2" if active_session == "session_1" else "session_1"
+                )
+                print(f"Switched to session: {active_session}")
+                continue
 
-            response = self.agent.invoke({"messages": [HumanMessage(content=user_input)]}, config)
+            config = {"configurable": {"thread_id": active_session}}
+
+            response = self.agent.invoke(
+                {"messages": [HumanMessage(content=user_input)]}, config
+            )
 
             print(response["messages"][-1].content)
 
