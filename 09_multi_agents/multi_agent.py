@@ -21,15 +21,20 @@ def veggie_info(veggie_name: str) -> str:
     }
     return facts.get(veggie_name.lower(), f"No specific info found for {veggie_name}.")
 
+
 def ask_fruit_expert(question: str) -> str:
-    '''Ask the fruit expert. Use for ALL fruit questions'''
-    response = fruit_agent.invoke({'messages': [{'role': 'user', 'content': question}]})
-    return response['messages'][-1].content
+    """Ask the fruit expert. Use for ALL fruit questions"""
+    response = fruit_agent.invoke({"messages": [{"role": "user", "content": question}]})
+    return response["messages"][-1].content
+
 
 def ask_veggie_expert(question: str) -> str:
-    '''Ask the veggie expert. Use for ALL veggie questions'''
-    response = veggie_agent.invoke({'messages': [{'role': 'user', 'content': question}]})
-    return response['messages'][-1].content
+    """Ask the veggie expert. Use for ALL veggie questions"""
+    response = veggie_agent.invoke(
+        {"messages": [{"role": "user", "content": question}]}
+    )
+    return response["messages"][-1].content
+
 
 if __name__ == "__main__":
     dotenv.load_dotenv()
@@ -38,21 +43,23 @@ if __name__ == "__main__":
     fruit_agent = create_agent(
         model=llm,
         tools=[fruit_info],
-        system_prompt='You are a fruit expert. Respond in one sentence.'
+        system_prompt="You are a fruit expert. Respond in one sentence.",
     )
 
     veggie_agent = create_agent(
         model=llm,
         tools=[veggie_info],
-        system_prompt='You are a veggie expert. Respond in one sentence.'
+        system_prompt="You are a veggie expert. Respond in one sentence.",
     )
-    
+
     main_agent = create_agent(
         model=llm,
         tools=[ask_fruit_expert, ask_veggie_expert],
-        system_prompt='You have two experts: ask_fruit_expert and ask_veggie_expert.'
-        'always delegate questions to the appropriate expert.'
+        system_prompt="You have two experts: ask_fruit_expert and ask_veggie_expert."
+        "always delegate questions to the appropriate expert.",
     )
 
-    response = main_agent.invoke({'messages': [{'role': 'user', 'content': 'Is a tomato a fruit?'}]})
-    print(response['messages'][-1].content)
+    response = main_agent.invoke(
+        {"messages": [{"role": "user", "content": "Is a tomato a fruit?"}]}
+    )
+    print(response["messages"][-1].content)
