@@ -1,19 +1,27 @@
+import os
 import dotenv
 from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain.agents import create_agent
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.postgres import PostgresSaver
+from langchain.agents.middleware import SummarizationMiddleware
 
 
 class Agent:
-    def __init__(self, model: str, temperature: float):
+    def __init__(self, model: str, temperature: float, checkpointer: PostgresSaver):
         self.llm = ChatGroq(model=model, temperature=temperature)
 
         self.agent = create_agent(
             model=self.llm,
             tools=[],
             system_prompt="Give short answers",
-            checkpointer=InMemorySaver(),
+            checkpointer=checkpointer,
+            middleware=[
+                SummarizationMiddleware(
+                    model=self.llm, trigger=("tokens", 200), keep=("messages", 4)
+                )
+            ],
         )
 
     def chat(self):
@@ -47,10 +55,22 @@ class Agent:
 
             print(response["messages"][-1].content)
 
+        config_history = {"configurable": {"thread_id": "session_3"}}
+
+        state = self.agent.get_state(config_history)
+        print(
+            state.values["messages"]
+        )  # prints the state of the whole config_history for only session_1
+
 
 if __name__ == "__main__":
     dotenv.load_dotenv()
+    db_url = os.environ["DB_URL"]
+
     model_name = "openai/gpt-oss-20b"
 
-    agent = Agent(model=model_name, temperature=0.5)
-    agent.chat()
+    with PostgresSaver.from_conn_string(db_url) as checkpointer:
+        checkpointer.setup()
+
+        agent = Agent(model=model_name, temperature=0.5, checkpointer=checkpointer)
+        agent.chat()
